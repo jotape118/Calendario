@@ -670,7 +670,8 @@ class _AssocPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        Expanded(
+        SizedBox(
+          height: 280,
           child: _EventPreviewList(
             dayKey: dayKeyForEvents,
             selectedId: pickedEvent?.id,
