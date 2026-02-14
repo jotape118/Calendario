@@ -15,6 +15,12 @@ class TasksRepositoryImpl implements TasksRepository {
   }
 
   @override
+  Future<List<TaskItem>> listAll() async {
+    final rows = await dao.listAll();
+    return rows.map(_toEntity).toList();
+  }
+
+  @override
   Future<List<TaskItem>> listFree() async {
     final rows = await dao.listFree();
     return rows.map(_toEntity).toList();
