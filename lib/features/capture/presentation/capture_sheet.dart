@@ -248,7 +248,7 @@ class _WaveBars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final heights = [36.0, 58, 72, 52, 78, 54, 70, 46, 30];
+    const heights = <double>[36.0, 58.0, 72.0, 52.0, 78.0, 54.0, 70.0, 46.0, 30.0];
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(heights.length, (i) {
