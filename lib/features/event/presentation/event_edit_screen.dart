@@ -241,9 +241,16 @@ class _EventEditScreenState extends State<EventEditScreen> {
 
                   const SizedBox(height: 14),
                   _PrimaryButton(
-                    label: 'GUARDAR',
+                    label: _isEdit ? 'GUARDAR CAMBIOS' : 'GUARDAR EVENTO',
                     onTap: _save,
                   ),
+                  if (_isEdit) ...[
+                    const SizedBox(height: 10),
+                    _DangerButton(
+                      label: 'ELIMINAR EVENTO',
+                      onTap: _delete,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -251,6 +258,34 @@ class _EventEditScreenState extends State<EventEditScreen> {
         ),
       ],
     );
+  }
+
+
+
+  Future<void> _delete() async {
+    final id = widget.eventId;
+    if (id == null) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Eliminar evento'),
+        content: const Text('¿Seguro que quieres eliminar este evento? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    await AppServices.I.eventsRepo.delete(id);
+    await AppServices.I.dayController.load();
+
+    if (!mounted) return;
+    _safeClose();
   }
 
   String _dateTimeLabel(BuildContext context) {
@@ -1188,6 +1223,41 @@ class _ColorPickerSheet extends StatelessWidget {
               }).toList(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _DangerButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _DangerButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        width: double.infinity,
+        height: 58,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0x66FF4D6D)),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFFF6B81),
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.2,
+            ),
+          ),
         ),
       ),
     );
