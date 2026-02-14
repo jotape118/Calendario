@@ -279,12 +279,14 @@ class _EventEditScreenState extends State<EventEditScreen> {
         const _EntryBackground(),
         SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.only(bottom: bottomInset + 120),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-              child: Column(
-                children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 120),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    children: [
                   _TopBar(
                     title: _isEdit ? 'Editar Evento' : 'Crear Evento',
                     onClose: _safeClose,
@@ -351,13 +353,14 @@ class _EventEditScreenState extends State<EventEditScreen> {
 
                   const SizedBox(height: 14),
 
-                  Expanded(
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _NotesSection(
-                            controller: _notes,
-                          ),
-                  ),
+                  _loading
+                      ? const SizedBox(
+                          height: 120,
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : _NotesSection(
+                          controller: _notes,
+                        ),
 
                   const SizedBox(height: 14),
                   _PrimaryButton(
@@ -371,9 +374,11 @@ class _EventEditScreenState extends State<EventEditScreen> {
                       onTap: _delete,
                     ),
                   ],
-                ],
-              ),
-            ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
