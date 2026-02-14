@@ -104,10 +104,14 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
         const _NewEntryBackground(),
         SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 120 + keyboard),
-            child: Column(
-              children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 120 + keyboard),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    children: [
                 _TopBar(
                   title: _isEdit ? 'Editar Tarea' : 'Crear Tarea',
                   onClose: () => context.pop(),
@@ -149,26 +153,26 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
 
                 const SizedBox(height: 14),
 
-                Expanded(
-                  child: _loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _AssocPanel(
-                          target: _target,
-                          pickedDay: _pickedDay,
-                          onDayChanged: (d) => setState(() => _pickedDay = d),
-                          dayKeyForEvents: todayKey,
-                          pickedEvent: _pickedEvent,
-                          onSelectEvent: (e) {
-                            setState(() {
-                              _target = TaskTargetType.event;
-                              _pickedEvent = e;
-                              _pickedEventId = e.id;
-                            });
-                          },
-                          onViewAll: _pickEvent,
-                        ),
-
-                ),
+                _loading
+                    ? const SizedBox(
+                        height: 220,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _AssocPanel(
+                        target: _target,
+                        pickedDay: _pickedDay,
+                        onDayChanged: (d) => setState(() => _pickedDay = d),
+                        dayKeyForEvents: todayKey,
+                        pickedEvent: _pickedEvent,
+                        onSelectEvent: (e) {
+                          setState(() {
+                            _target = TaskTargetType.event;
+                            _pickedEvent = e;
+                            _pickedEventId = e.id;
+                          });
+                        },
+                        onViewAll: _pickEvent,
+                      ),
 
                 const SizedBox(height: 14),
                 _PrimaryButton(
@@ -183,8 +187,11 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
                   ),
                 ],
                 const SizedBox(height: 6),
-              ],
-            ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
