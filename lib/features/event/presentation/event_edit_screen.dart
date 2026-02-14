@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
@@ -19,7 +21,12 @@ class EventEditScreen extends StatefulWidget {
   State<EventEditScreen> createState() => _EventEditScreenState();
 }
 
+enum _RecurrenceType { none, daily, weekly, monthly }
+
 class _EventEditScreenState extends State<EventEditScreen> {
+  static const _metaPrefix = '[[CFG:';
+  static const _metaSuffix = ']]';
+
   final _title = TextEditingController();
   final _notes = TextEditingController();
 
@@ -28,6 +35,9 @@ class _EventEditScreenState extends State<EventEditScreen> {
   TimeOfDay? _end;
 
   int _colorValue = AppColors.accentViolet.value;
+  _RecurrenceType _recurrence = _RecurrenceType.none;
+  int _repeatTimes = 1;
+  int? _alarmMinutes;
 
   DateTime? _createdAt;
   bool _loading = false;
@@ -57,7 +67,11 @@ class _EventEditScreenState extends State<EventEditScreen> {
 
     if (e != null) {
       _title.text = e.title;
-      _notes.text = e.notes ?? '';
+      _notes.text = _plainNotes(e.notes);
+      final cfg = _readMeta(e.notes);
+      _recurrence = _recurrenceFromName(cfg['recurrence'] as String?);
+      _repeatTimes = _safeRepeat(cfg['repeatTimes'] as int? ?? 1);
+      _alarmMinutes = cfg['alarmMinutes'] as int?;
       _date = _parseDayKey(e.dayKey);
       _start = e.startMin == null ? null : _minToTimeOfDay(e.startMin!);
       _end = e.endMin == null ? null : _minToTimeOfDay(e.endMin!);
@@ -126,6 +140,57 @@ class _EventEditScreenState extends State<EventEditScreen> {
     if (picked != null) setState(() => _colorValue = picked);
   }
 
+  Map<String, Object?> _readMeta(String? notes) {
+    if (notes == null) return const {};
+    final start = notes.lastIndexOf(_metaPrefix);
+    if (start < 0) return const {};
+
+    final end = notes.indexOf(_metaSuffix, start + _metaPrefix.length);
+    if (end < 0) return const {};
+
+    try {
+      final raw = notes.substring(start + _metaPrefix.length, end);
+      final json = utf8.decode(base64Url.decode(raw));
+      final map = jsonDecode(json);
+      if (map is Map<String, dynamic>) {
+        return map;
+      }
+    } catch (_) {
+      return const {};
+    }
+    return const {};
+  }
+
+  String _plainNotes(String? notes) {
+    if (notes == null) return '';
+    final start = notes.lastIndexOf(_metaPrefix);
+    if (start < 0) return notes;
+    return notes.substring(0, start).trimRight();
+  }
+
+  String? _composeNotesWithMeta(String? plain) {
+    final clean = plain?.trim();
+    final map = <String, Object?>{
+      'alarmMinutes': _alarmMinutes,
+      'recurrence': _recurrence.name,
+      'repeatTimes': _safeRepeat(_repeatTimes),
+    };
+
+    final enc = base64Url.encode(utf8.encode(jsonEncode(map)));
+    final meta = '$_metaPrefix$enc$_metaSuffix';
+    if (clean == null || clean.isEmpty) return meta;
+    return '$clean\n$meta';
+  }
+
+  _RecurrenceType _recurrenceFromName(String? name) {
+    return _RecurrenceType.values.firstWhere(
+      (v) => v.name == name,
+      orElse: () => _RecurrenceType.none,
+    );
+  }
+
+  int _safeRepeat(int n) => n.clamp(1, 30);
+
   Future<void> _save() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
@@ -152,11 +217,13 @@ class _EventEditScreenState extends State<EventEditScreen> {
     final dayKey = _toDayKey(_date);
     final id = widget.eventId ?? const Uuid().v4();
 
+    final composedNotes = _composeNotesWithMeta(_notes.text);
+
     final event = CalendarEvent(
       id: id,
       dayKey: dayKey,
       title: title,
-      notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+      notes: composedNotes,
       startMin: startMin,
       endMin: endMin,
       color: _colorValue,
@@ -165,10 +232,42 @@ class _EventEditScreenState extends State<EventEditScreen> {
     );
 
     await AppServices.I.eventsRepo.upsert(event);
+
+    if (!_isEdit && _recurrence != _RecurrenceType.none && _repeatTimes > 1) {
+      for (var i = 1; i < _repeatTimes; i++) {
+        final d = _nextDate(_date, _recurrence, i);
+        final recEvent = CalendarEvent(
+          id: const Uuid().v4(),
+          dayKey: _toDayKey(d),
+          title: title,
+          notes: composedNotes,
+          startMin: startMin,
+          endMin: endMin,
+          color: _colorValue,
+          createdAt: now,
+          updatedAt: now,
+        );
+        await AppServices.I.eventsRepo.upsert(recEvent);
+      }
+    }
+
     await AppServices.I.dayController.load();
 
     if (!mounted) return;
     _safeClose();
+  }
+
+  DateTime _nextDate(DateTime base, _RecurrenceType type, int step) {
+    switch (type) {
+      case _RecurrenceType.none:
+        return base;
+      case _RecurrenceType.daily:
+        return base.add(Duration(days: step));
+      case _RecurrenceType.weekly:
+        return base.add(Duration(days: 7 * step));
+      case _RecurrenceType.monthly:
+        return DateTime(base.year, base.month + step, base.day);
+    }
   }
 
   @override
@@ -216,6 +315,27 @@ class _EventEditScreenState extends State<EventEditScreen> {
                   _DateTimePill(
                     label: _dateTimeLabel(context),
                     onTap: _pickDateTime,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  _Label('RECURRENCIA'),
+                  const SizedBox(height: 8),
+                  _RecurrenceRow(
+                    value: _recurrence,
+                    count: _repeatTimes,
+                    enabled: !_isEdit,
+                    onChanged: (v) => setState(() => _recurrence = v),
+                    onCountChanged: (v) => setState(() => _repeatTimes = v),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  _Label('ALARMA'),
+                  const SizedBox(height: 8),
+                  _AlarmRow(
+                    value: _alarmMinutes,
+                    onChanged: (v) => setState(() => _alarmMinutes = v),
                   ),
 
                   const SizedBox(height: 14),
@@ -634,6 +754,230 @@ class _DateTimePill extends StatelessWidget {
             Icon(Icons.calendar_month, color: AppColors.textMuted2.withOpacity(0.8)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RecurrenceRow extends StatelessWidget {
+  final _RecurrenceType value;
+  final int count;
+  final bool enabled;
+  final ValueChanged<_RecurrenceType> onChanged;
+  final ValueChanged<int> onCountChanged;
+
+  const _RecurrenceRow({
+    required this.value,
+    required this.count,
+    required this.enabled,
+    required this.onChanged,
+    required this.onCountChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _ChoiceChipButton(
+              text: 'No repetir',
+              selected: value == _RecurrenceType.none,
+              onTap: enabled ? () => onChanged(_RecurrenceType.none) : null,
+            ),
+            _ChoiceChipButton(
+              text: 'Diario',
+              selected: value == _RecurrenceType.daily,
+              onTap: enabled ? () => onChanged(_RecurrenceType.daily) : null,
+            ),
+            _ChoiceChipButton(
+              text: 'Semanal',
+              selected: value == _RecurrenceType.weekly,
+              onTap: enabled ? () => onChanged(_RecurrenceType.weekly) : null,
+            ),
+            _ChoiceChipButton(
+              text: 'Mensual',
+              selected: value == _RecurrenceType.monthly,
+              onTap: enabled ? () => onChanged(_RecurrenceType.monthly) : null,
+            ),
+          ],
+        ),
+        if (value != _RecurrenceType.none) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(
+                'Repetir',
+                style: TextStyle(
+                  color: AppColors.textMuted2.withOpacity(0.85),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 72,
+                child: _SmallCounterField(
+                  value: count,
+                  enabled: enabled,
+                  onChanged: onCountChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'veces',
+                style: TextStyle(
+                  color: AppColors.textMuted2.withOpacity(0.85),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          if (!enabled)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'La recurrencia sólo se aplica al crear un evento nuevo.',
+                style: TextStyle(
+                  color: AppColors.textMuted2.withOpacity(0.65),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AlarmRow extends StatelessWidget {
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _AlarmRow({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <({String text, int? minutes})>[
+      (text: 'Sin alarma', minutes: null),
+      (text: 'En hora', minutes: 0),
+      (text: '5 min', minutes: 5),
+      (text: '10 min', minutes: 10),
+      (text: '30 min', minutes: 30),
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: options
+          .map(
+            (o) => _ChoiceChipButton(
+              text: o.text,
+              selected: o.minutes == value,
+              onTap: () => onChanged(o.minutes),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _ChoiceChipButton extends StatelessWidget {
+  final String text;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _ChoiceChipButton({required this.text, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.accentViolet.withOpacity(0.25) : AppColors.surface.withOpacity(0.22),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppColors.accentViolet.withOpacity(0.55) : AppColors.borderTop,
+          ),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: selected ? AppColors.accentViolet : AppColors.textMuted2.withOpacity(0.9),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallCounterField extends StatelessWidget {
+  final int value;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  const _SmallCounterField({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.borderTop),
+        color: AppColors.surface.withOpacity(0.22),
+      ),
+      child: Row(
+        children: [
+          _CounterBtn(
+            icon: Icons.remove,
+            enabled: enabled && value > 1,
+            onTap: () => onChanged((value - 1).clamp(1, 30)),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                '$value',
+                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+          _CounterBtn(
+            icon: Icons.add,
+            enabled: enabled && value < 30,
+            onTap: () => onChanged((value + 1).clamp(1, 30)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CounterBtn extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _CounterBtn({required this.icon, required this.enabled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: SizedBox(
+        width: 24,
+        height: 36,
+        child: Icon(icon, size: 14, color: enabled ? AppColors.textPrimary : AppColors.textMuted2),
       ),
     );
   }
