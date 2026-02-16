@@ -55,7 +55,7 @@ class _BottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    final barHeight = 74.0 + bottomInset;
+    final barHeight = 86.0 + bottomInset;
 
     return SizedBox(
       height: barHeight,
@@ -64,9 +64,9 @@ class _BottomNavBar extends StatelessWidget {
         children: [
           Positioned.fill(
             child: Container(
-              padding: EdgeInsets.only(left: 18, right: 96, bottom: bottomInset),
+              padding: EdgeInsets.only(left: 16, right: 112, bottom: bottomInset + 4, top: 6),
               decoration: BoxDecoration(
-                color: AppColors.background.withOpacity(0.92),
+                color: AppColors.background.withOpacity(0.95),
                 border: const Border(top: BorderSide(color: AppColors.borderTop)),
               ),
               child: Row(
@@ -96,8 +96,8 @@ class _BottomNavBar extends StatelessWidget {
           ),
 
           Positioned(
-            right: 18,
-            bottom: bottomInset + 6,
+            right: 16,
+            bottom: bottomInset + 8,
             child: _MicroButton(
               selected: selectedIndex == 3,
               onTap: onTapMicro,
@@ -130,19 +130,33 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: c, size: 22),
-            const SizedBox(height: 6),
+            SizedBox(
+              height: 4,
+              child: selected
+                  ? Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: AppColors.accentViolet,
+                        shape: BoxShape.circle,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 3),
+            Icon(icon, color: c, size: 21),
+            const SizedBox(height: 5),
             Text(
               label,
               style: TextStyle(
                 color: c,
                 fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.2,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.3,
               ),
             ),
           ],
@@ -170,29 +184,31 @@ class _MicroButton extends StatelessWidget {
           child: Transform.rotate(
             angle: math.pi / 4,
             child: Container(
-              width: 62,
-              height: 62,
+              width: 74,
+              height: 74,
               decoration: BoxDecoration(
                 color: AppColors.accentViolet,
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.black.withOpacity(0.6), width: 3),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.accentViolet.withOpacity(0.35),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
+                    color: AppColors.accentViolet.withOpacity(0.45),
+                    blurRadius: 24,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
               child: Transform.rotate(
                 angle: -math.pi / 4,
                 child: const Center(
-                  child: Icon(Icons.mic, color: Colors.white, size: 28),
+                  child: Icon(Icons.mic, color: Colors.white, size: 32),
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         Text(
           'MICRO',
           style: TextStyle(

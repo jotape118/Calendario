@@ -31,6 +31,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   CalendarEvent? _pickedEvent;
 
   bool _loading = false;
+  TaskItem? _existingTask;
 
   TasksRepository get _repo => AppServices.I.tasksRepo;
   bool get _isEdit => widget.taskId != null;
@@ -56,6 +57,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
     if (!mounted) return;
 
     if (t != null) {
+      _existingTask = t;
       _title.text = t.title;
       _notes.text = t.notes ?? '';
       _target = t.targetType;
@@ -102,10 +104,14 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
         const _NewEntryBackground(),
         SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 120 + keyboard),
-            child: Column(
-              children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 120 + keyboard),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    children: [
                 _TopBar(
                   title: _isEdit ? 'Editar Tarea' : 'Crear Tarea',
                   onClose: () => context.pop(),
@@ -147,35 +153,45 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
 
                 const SizedBox(height: 14),
 
-                Expanded(
-                  child: _loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _AssocPanel(
-                          target: _target,
-                          pickedDay: _pickedDay,
-                          onDayChanged: (d) => setState(() => _pickedDay = d),
-                          dayKeyForEvents: todayKey,
-                          pickedEvent: _pickedEvent,
-                          onSelectEvent: (e) {
-                            setState(() {
-                              _target = TaskTargetType.event;
-                              _pickedEvent = e;
-                              _pickedEventId = e.id;
-                            });
-                          },
-                          onViewAll: _pickEvent,
-                        ),
-
-                ),
+                _loading
+                    ? const SizedBox(
+                        height: 220,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _AssocPanel(
+                        target: _target,
+                        pickedDay: _pickedDay,
+                        onDayChanged: (d) => setState(() => _pickedDay = d),
+                        dayKeyForEvents: todayKey,
+                        pickedEvent: _pickedEvent,
+                        onSelectEvent: (e) {
+                          setState(() {
+                            _target = TaskTargetType.event;
+                            _pickedEvent = e;
+                            _pickedEventId = e.id;
+                          });
+                        },
+                        onViewAll: _pickEvent,
+                      ),
 
                 const SizedBox(height: 14),
                 _PrimaryButton(
                   label: _isEdit ? 'GUARDAR CAMBIOS' : 'GUARDAR TAREA',
                   onTap: _save,
                 ),
+                if (_isEdit) ...[
+                  const SizedBox(height: 10),
+                  _DangerButton(
+                    label: 'ELIMINAR TAREA',
+                    onTap: _delete,
+                  ),
+                ],
                 const SizedBox(height: 6),
-              ],
-            ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -188,6 +204,8 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
 
     final now = DateTime.now();
     final id = widget.taskId ?? const Uuid().v4();
+    final wasDone = _existingTask?.isDone ?? false;
+    final createdAt = _existingTask?.createdAt ?? now;
 
     final dayKey = _target == TaskTargetType.day ? _dayKey : null;
     final eventId = _target == TaskTargetType.event ? _pickedEventId : null;
@@ -199,12 +217,36 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
       targetType: _target,
       dayKey: dayKey,
       eventId: eventId,
-      isDone: false,
-      createdAt: now,
+      isDone: wasDone,
+      createdAt: createdAt,
       updatedAt: now,
     );
 
     await _repo.upsert(task);
+
+    if (!mounted) return;
+    context.pop();
+  }
+
+  Future<void> _delete() async {
+    final id = widget.taskId;
+    if (id == null) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Eliminar tarea'),
+        content: const Text('¿Seguro que quieres eliminar esta tarea? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+    await _repo.delete(id);
 
     if (!mounted) return;
     context.pop();
@@ -628,7 +670,8 @@ class _AssocPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        Expanded(
+        SizedBox(
+          height: 280,
           child: _EventPreviewList(
             dayKey: dayKeyForEvents,
             selectedId: pickedEvent?.id,
@@ -873,6 +916,41 @@ class _PrimaryButton extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w900,
               letterSpacing: 4.0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _DangerButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _DangerButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        width: double.infinity,
+        height: 58,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0x66FF4D6D)),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFFF6B81),
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.2,
             ),
           ),
         ),

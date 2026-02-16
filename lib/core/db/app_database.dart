@@ -92,6 +92,16 @@ class TasksDao extends DatabaseAccessor<AppDatabase> with _$TasksDaoMixin {
         .getSingleOrNull();
   }
 
+  Future<List<TaskRow>> listAll() {
+    final q = select(tasks)
+      ..where((t) => t.deletedAt.isNull())
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.isDone),
+        (t) => OrderingTerm(expression: t.updatedAt, mode: OrderingMode.desc),
+      ]);
+    return q.get();
+  }
+
   Future<List<TaskRow>> listFree() {
     final q = select(tasks)
       ..where((t) => t.targetType.equals(0) & t.deletedAt.isNull())

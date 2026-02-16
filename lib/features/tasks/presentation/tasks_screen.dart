@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../../app/di.dart';
 import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../event/domain/entities/calendar_event.dart';
 import '../domain/entities/task_item.dart';
 
 enum _TasksFilter { all, pending, done }
@@ -21,11 +20,12 @@ class _TasksScreenState extends State<TasksScreen> {
 
   _TasksFilter _filter = _TasksFilter.all;
 
-  List<TaskItem> free = [];
+  List<TaskItem> pending = [];
   List<TaskItem> today = [];
 
   // cache simple para badges de eventos (id -> title)
   final Map<String, String> _eventTitleCache = {};
+  final Map<String, String> _eventDayKeyCache = {};
 
   @override
   void initState() {
@@ -39,27 +39,47 @@ class _TasksScreenState extends State<TasksScreen> {
 
     final todayKey = _toDayKey(DateTime.now());
 
-    final r1 = await repo.listFree();
-    final r2 = await repo.listByDayKey(todayKey);
+    final allTasks = await repo.listAll();
 
-    // precarga títulos de eventos para las tareas que lo necesiten (si aparecen en HOY o SIN FECHA)
-    final eventIds = <String>{
-      ...r1.map((t) => t.eventId).whereType<String>(),
-      ...r2.map((t) => t.eventId).whereType<String>(),
-    };
+    // precarga títulos + dayKey del evento para clasificar correctamente
+    final eventIds = allTasks.map((t) => t.eventId).whereType<String>().toSet();
 
     for (final id in eventIds) {
-      if (_eventTitleCache.containsKey(id)) continue;
+      if (_eventTitleCache.containsKey(id) && _eventDayKeyCache.containsKey(id)) {
+        continue;
+      }
       final ev = await AppServices.I.eventsRepo.getById(id);
-      if (ev != null) _eventTitleCache[id] = ev.title;
+      if (ev != null) {
+        _eventTitleCache[id] = ev.title;
+        _eventDayKeyCache[id] = ev.dayKey;
+      }
+    }
+
+    final todayItems = <TaskItem>[];
+    final pendingItems = <TaskItem>[];
+
+    for (final t in allTasks) {
+      if (_isTodayTask(t, todayKey)) {
+        todayItems.add(t);
+      } else {
+        pendingItems.add(t);
+      }
     }
 
     if (!mounted) return;
     setState(() {
-      free = r1;
-      today = r2;
+      today = todayItems;
+      pending = pendingItems;
       _loading = false;
     });
+  }
+
+  bool _isTodayTask(TaskItem t, String todayKey) {
+    if (t.dayKey == todayKey) return true;
+    if (t.eventId != null) {
+      return _eventDayKeyCache[t.eventId!] == todayKey;
+    }
+    return false;
   }
 
   List<TaskItem> _applyFilter(List<TaskItem> items) {
@@ -76,7 +96,7 @@ class _TasksScreenState extends State<TasksScreen> {
   @override
   Widget build(BuildContext context) {
     final todayFiltered = _applyFilter(today);
-    final freeFiltered = _applyFilter(free);
+    final pendingFiltered = _applyFilter(pending);
 
     return Stack(
       children: [
@@ -147,14 +167,13 @@ class _TasksScreenState extends State<TasksScreen> {
                     const SizedBox(height: 18),
                   ],
 
-                  // En tu data actual: "PENDIENTES" es básicamente sin fecha (free)
                   _SectionTitleRow(left: 'PENDIENTES', right: ''),
                   const SizedBox(height: 10),
 
-                  if (freeFiltered.isEmpty)
-                    _EmptyHint(text: 'No hay tareas sin fecha.')
+                  if (pendingFiltered.isEmpty)
+                    _EmptyHint(text: 'No hay tareas pendientes.')
                   else
-                    ...freeFiltered.map(
+                    ...pendingFiltered.map(
                       (t) => _TaskCard(
                         t: t,
                         badgeLabel: _badgeForTask(t),
@@ -176,16 +195,6 @@ class _TasksScreenState extends State<TasksScreen> {
                   const SizedBox(height: 16),
                 ],
 
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: IconButton(
-                    onPressed: () => context.push(AppRoutes.taskNew).then((_) => _load()),
-                    icon: const Icon(Icons.add_circle_outline),
-                    color: AppColors.textPrimary,
-                    tooltip: 'Nueva tarea',
-                  ),
-                ),
               ],
             ),
           ),
